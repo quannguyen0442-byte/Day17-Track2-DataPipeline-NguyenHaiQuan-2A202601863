@@ -45,16 +45,21 @@
 #}
 
 {% macro normalize_priority(col) %}
-    -- TODO(nhiệm vụ 3): thay biểu thức dưới đây bằng một khối CASE xử lý
-    -- đủ ba nhóm ở trên.
-    --
-    --     case
-    --         when <nhóm 1: đã là số hợp lệ>  then <giữ nguyên>
-    --         when <nhóm 2: nhãn chữ>         then <số tương ứng>
-    --         ...
-    --         else null                        -- nhóm 3
-    --     end
-    try_cast({{ col }} as integer)
+    case
+        -- Nhóm 1: đã là số và nằm đúng miền contract 1..4. Giữ nguyên.
+        -- Điều kiện `between` cũng chính là chỗ loại '0', '5', '-1': chúng ép
+        -- kiểu thành số được nhưng nằm ngoài miền, nên rơi xuống else.
+        when try_cast({{ col }} as integer) between 1 and 4
+            then try_cast({{ col }} as integer)
+        -- Nhóm 2: nhãn chữ dùng từ 2026-08-10. Cùng ý nghĩa, khác cách biểu
+        -- diễn. Quy về số theo tài liệu API của team backend.
+        when lower(trim({{ col }})) = 'urgent' then 1
+        when lower(trim({{ col }})) = 'high'   then 2
+        when lower(trim({{ col }})) = 'medium' then 3
+        when lower(trim({{ col }})) = 'low'    then 4
+        -- Nhóm 3: hỏng thật. NULL là tín hiệu để quarantine_tickets nhặt ra.
+        else null
+    end
 {% endmacro %}
 
 
@@ -64,6 +69,11 @@
     hơn (rỗng / NULL / là số nhưng ngoài khoảng / là chuỗi lạ).
 #}
 {% macro priority_reject_reason(col) %}
-    -- TODO(nhiệm vụ 3, không bắt buộc): phân biệt các loại lỗi khác nhau.
-    'priority không quy đổi được về 1..4'
+    case
+        when {{ col }} is null            then 'priority bị thiếu (NULL)'
+        when trim({{ col }}) = ''         then 'priority rỗng'
+        when try_cast({{ col }} as integer) is not null
+            then 'priority là số nhưng ngoài miền 1..4'
+        else 'priority là chuỗi không quy đổi được về 1..4'
+    end
 {% endmacro %}

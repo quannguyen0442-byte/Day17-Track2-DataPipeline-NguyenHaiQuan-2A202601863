@@ -35,16 +35,30 @@
 
 {{ config(materialized = 'table') }}
 
-with ranked as (
+with chuan_hoa as (
 
     select
         *,
-        {{ normalize_priority('priority_raw') }}             as priority_clean,
+        {{ normalize_priority('priority_raw') }}             as priority_clean
+    from {{ source('bronze', 'bronze_tickets_cdc') }}
+
+),
+
+-- LỌC TRƯỚC, XẾP HẠNG SAU. Loại bản ghi CDC hỏng ra khỏi tập ứng viên trước
+-- khi xếp hạng, để một ticket có bản ghi mới nhất bị hỏng vẫn giữ được trạng
+-- thái hợp lệ từ lần cập nhật trước đó. Nếu xếp hạng trước rồi mới lọc thì cả
+-- ticket biến mất khỏi Silver và số ticket tụt từ 12.480 xuống 12.168.
+hop_le as (select * from chuan_hoa where priority_clean is not null),
+
+ranked as (
+
+    select
+        *,
         row_number() over (
             partition by ticket_id
             order by event_time desc, cdc_seq desc
         ) as _rn
-    from {{ source('bronze', 'bronze_tickets_cdc') }}
+    from hop_le
 
 ),
 
